@@ -1,0 +1,223 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>다기능 메모장</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        textarea {
+            width: 100%;
+            max-width: 600px;
+            height: 100px;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .delete-btn {
+            background-color: #f44336;
+        }
+        .delete-btn:hover {
+            background-color: #d32f2f;
+        }
+        .edit-btn {
+            background-color: #2196F3;
+        }
+        .edit-btn:hover {
+            background-color: #1976D2;
+        }
+        #memoList {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+        }
+        .memo-item {
+            background-color: white;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .memo-content {
+            flex-grow: 1;
+            margin-right: 10px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <h1>다기능 메모장</h1>
+    <textarea id="memoInput" placeholder="여기에 메모를 입력하세요..."></textarea>
+    <button onclick="saveMemo()">메모 추가</button>
+    <div id="memoList"></div>
+
+    <script>
+        // 페이지 로드 시 메모 목록 불러오기
+        window.onload = function() {
+            try {
+                loadMemos();
+            } catch (error) {
+                console.error('메모 로드 중 오류:', error);
+            }
+        };
+
+        // 메모 저장 함수
+        function saveMemo() {
+            const memoInput = document.getElementById('memoInput');
+            const memoText = memoInput.value.trim();
+            if (memoText === '') {
+                alert('메모를 입력해주세요!');
+                return;
+            }
+
+            try {
+                const memos = JSON.parse(localStorage.getItem('memos') || '[]');
+                memos.push({ id: Date.now(), text: memoText });
+                localStorage.setItem('memos', JSON.stringify(memos));
+                memoInput.value = '';
+                loadMemos();
+                console.log('메모 저장 완료:', memoText);
+            } catch (error) {
+                console.error('메모 저장 중 오류:', error);
+                alert('메모 저장에 실패했습니다.');
+            }
+        }
+
+        // 메모 목록 로드 및 렌더링
+        function loadMemos() {
+            try {
+                const memoList = document.getElementById('memoList');
+                const memos = JSON.parse(localStorage.getItem('memos') || '[]');
+                memoList.innerHTML = '';
+
+                if (memos.length === 0) {
+                    memoList.innerHTML = '<p>저장된 메모가 없습니다.</p>';
+                    return;
+                }
+
+                memos.forEach(memo => {
+                    const memoItem = document.createElement('div');
+                    memoItem.className = 'memo-item';
+                    memoItem.innerHTML = `
+                        <div class="memo-content">${memo.text}</div>
+                        <div>
+                            <button class="edit-btn" onclick="editMemo(${memo.id})">수정</button>
+                            <button class="delete-btn" onclick="deleteMemo(${memo.id})">삭제</button>
+                        </div>
+                    `;
+                    memoList.appendChild(memoItem);
+                });
+                console.log('메모 목록 로드 완료:', memos);
+            } catch (error) {
+                console.error('메모 목록 렌더링 중 오류:', error);
+                alert('메모 목록을 불러오는 데 실패했습니다.');
+            }
+        }
+
+        // 메모 삭제 함수
+        function deleteMemo(id) {
+            try {
+                if (confirm('이 메모를 삭제하시겠습니까?')) {
+                    let memos = JSON.parse(localStorage.getItem('memos') || '[]');
+                    memos = memos.filter(memo => memo.id !== id);
+                    localStorage.setItem('memos', JSON.stringify(memos));
+                    loadMemos();
+                    console.log('메모 삭제 완료, ID:', id);
+                }
+            } catch (error) {
+                console.error('메모 삭제 중 오류:', error);
+                alert('메모 삭제에 실패했습니다.');
+            }
+        }
+
+        // 메모 수정 함수
+        function editMemo(id) {
+            try {
+                const memos = JSON.parse(localStorage.getItem('memos') || '[]');
+                const memo = memos.find(m => m.id === id);
+                if (memo) {
+                    const newText = prompt('메모를 수정하세요:', memo.text);
+                    if (newText !== null && newText.trim() !== '') {
+                        memo.text = newText.trim();
+                        localStorage.setItem('memos', JSON.stringify(memos));
+                        loadMemos();
+                        console.log('메모 수정 완료, ID:', id);
+                    } else if (newText !== null && newText.trim() === '') {
+                        alert('메모 내용은 비어 있을 수 없습니다!');
+                    }
+                } else {
+                    alert('메모를 찾을 수 없습니다.');
+                }
+            } catch (error) {
+                console.error('메모 수정 중 오류:', error);
+                alert('메모 수정에 실패했습니다.');
+            }
+        }
+    </script>
+</body>
+</html>
